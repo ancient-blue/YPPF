@@ -714,4 +714,4 @@ class TransferRecordAdmin(admin.ModelAdmin):
 
 admin.site.register(YQPointDistribute)
 admin.site.register(QandA)
-
+admin.site.register(LaunchCourse)

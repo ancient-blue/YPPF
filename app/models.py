@@ -34,6 +34,8 @@ __all__ = [
     'Help',
     'Wishes',
     'ModifyRecord',
+    'LaunchCourse',
+    'CourseParticipant',
 ]
 
 
@@ -1230,7 +1232,7 @@ class Wishes(models.Model):
         verbose_name = "心愿"
         verbose_name_plural = verbose_name
         ordering = ["-time"]
-    
+
     COLORS = [
         "#FDAFAB","#FFDAC1","#FAF1D6",
         "#B6E3E9","#B5EAD7","#E2F0CB",
@@ -1257,3 +1259,148 @@ class ModifyRecord(models.Model):
     name = models.CharField('名称', max_length=32, default='', blank=True)
     info = models.TextField('相关信息', default='', blank=True)
     time = models.DateTimeField('修改时间', auto_now_add=True)
+
+
+class LaunchCourseManager(models.Manager):
+    def activated(self):
+        # 选择当前学期的开设课程
+        # 不显示已撤销的课程信息
+        return self.filter(
+            year=int(local_dict["semester_data"]["year"]),
+            semester=local_dict["semester_data"]["semester"]).exclude(
+                status=LaunchCourse.Status.ABORT)
+
+    def selected(self, person: NaturalPerson):
+        # 返回当前学生所选的所有课程
+        return self.activated().filter(
+            courseparticipant__person_id=person,
+            courseparticipant__status=CourseParticipant.Status.SELECT)
+
+    def unselected(self, person: NaturalPerson):
+        # 返回当前学生没选的所有课程
+        return self.activated().filter(
+            courseparticipant__person_id=person,
+            courseparticipant__status=CourseParticipant.Status.UNSELECT)
+
+
+class LaunchCourse(CommentBase):
+    """
+    （助教）发布课程/（学生）选课依赖的表
+
+    暂定需要的信息
+    1、开课组织
+    2、课程名称
+    3、开课年份 + 学期
+    4、每周上课时间 + 上课地点
+    5、授课老师
+    6、课程简介 + 宣传图片
+    7、需要投的意愿点数量
+    8、选课人（多对多关系，用中间模型记录选课状态）
+    9、状态：未开始选课、正在预选、正在补退选、选课结束
+    10、四个时间节点：预选开始、预选结束、补退选开始、补退选结束
+    11、课程容量 + 已选课人数
+    """
+    class Meta:
+        verbose_name = "发布课程"
+        verbose_name_plural = verbose_name
+
+    name = models.CharField("课程名称", max_length=60)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        verbose_name="开课组织",
+    )
+
+    year = models.IntegerField("开课年份", default=current_year)
+
+    semester = models.CharField("开课学期",
+                                choices=Semester.choices,
+                                max_length=15,
+                                default=Semester.get(
+                                    local_dict["semester_data"]["semester"]))
+
+    class_time = models.CharField("预期上课时间", max_length=60, default="")
+    classroom = models.CharField("预期上课地点", max_length=60, default="")
+    teacher = models.CharField("授课教师", max_length=24, default="")
+
+    # TODO：需要考虑默认设置和是否允许为空
+    stage1_start = models.DateTimeField("预选开始时间",
+                                        blank=True,
+                                        default=datetime.now)
+    stage1_end = models.DateTimeField("预选结束时间",
+                                      blank=True,
+                                      default=datetime.now)
+    stage2_start = models.DateTimeField("补退选开始时间",
+                                        blank=True,
+                                        default=datetime.now)
+    stage2_end = models.DateTimeField("补退选结束时间",
+                                      blank=True,
+                                      default=datetime.now)
+
+    # 暂时没有发现用浮点型的需要
+    bidding = models.IntegerField("意愿点价格", default=0)
+
+    introduction = models.TextField("课程简介", max_length=600, blank=True)
+
+    # 假定课程已经进行线下审核，暂定不需要二次审核
+    # examine_teacher = models.ForeignKey(NaturalPerson,
+    #                                     related_name="reviewer",
+    #                                     on_delete=models.CASCADE,
+    #                                     verbose_name="审核老师")
+
+    # 可能在预选和补退选中间需要加入状态
+    class Status(models.TextChoices):
+        # REVIEWING = "审核中"
+        # REJECT = "未过审"
+        ABORT = "已撤销"
+        WAITING = "未开始选课"
+        STAGE1 = "预选"
+        STAGE2 = "补退选"
+        END = "已结束"
+
+    status = models.CharField(
+        "开课状态",
+        choices=Status.choices,
+        default=Status.WAITING,
+        max_length=18,
+    )
+
+    capacity = models.IntegerField("课程容量", default=100)
+    current_participants = models.IntegerField("当前选课人数", default=0)
+
+    # 暂时只允许上传一张图片，如果需要上传多张图片，则要另外建表
+    photo = models.ImageField(verbose_name="宣传图片",
+                              upload_to=f"course/photo/%Y/",
+                              blank=True)
+
+    participants = models.ManyToManyField(NaturalPerson,
+                                          through='CourseParticipant')
+
+    def save(self, *args, **kwargs):
+        self.typename = "launchcourse"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
+class CourseParticipant(models.Model):
+    class Meta:
+        verbose_name = "选课报名情况"
+        verbose_name_plural = verbose_name
+
+    course_id = models.ForeignKey(LaunchCourse, on_delete=models.CASCADE)
+    person_id = models.ForeignKey(NaturalPerson, on_delete=models.CASCADE)
+
+    class Status(models.TextChoices):
+        SELECT = "已选课"
+        UNSELECT = "未选课"
+        SUCCESS = "选课成功"
+        FAILED = "选课失败"
+
+    status = models.CharField(
+        "选课状态",
+        choices=Status.choices,
+        default=Status.UNSELECT,
+        max_length=15,
+    )
