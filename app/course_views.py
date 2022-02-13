@@ -21,7 +21,7 @@ from app.course_utils import (
 from app.utils import get_person_or_org
 
 from django.db import transaction
-
+from datetime import datetime
 
 __all__ = [
     'editCourseActivity',
