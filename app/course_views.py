@@ -19,6 +19,7 @@ from django.db import transaction
 __all__ = [
     'editCourseActivity', 
     'addSingleCourseActivity',
+    'showCourseActivity',
     'addCourse',
 ]
 
@@ -106,7 +107,7 @@ def addSingleCourseActivity(request):
         valid, user_type, html_display = utils.check_user_type(request.user)
         # assert valid  已经在check_user_access检查过了
         me = utils.get_person_or_org(request.user, user_type)  # 这里的me应该为小组账户
-        if user_type != "Organization":
+        if user_type != "Organization" or me.otype.otype_name != COURSE_TYPENAME:
             return redirect(message_url(wrong('书院课程小组账号才能开设课程活动!')))
         if me.oname == YQP_ONAME:
             return redirect("/showActivity")  # TODO: 可以重定向到书院课程聚合页面
@@ -137,7 +138,52 @@ def addSingleCourseActivity(request):
 
     return render(request, "lesson_add.html", locals())
 
+  
+@login_required(redirect_field_name='origin')
+@utils.check_user_access(redirect_url="/logout/")
+@log.except_captured(source='course_views[showCourseActivity]', record_user=True)
+def showCourseActivity(request):
+    """
+    筛选本学期已结束的课程活动、未开始的课程活动，在课程活动聚合页面进行显示。
+    """
 
+    # Sanity check and start a html_display.
+    _, user_type, html_display = utils.check_user_type(request.user)
+    me = get_person_or_org(request.user, user_type)  # 获取自身
+
+    if user_type != "Organization" or me.otype.otype_name != COURSE_TYPENAME:
+        return redirect(message_url(wrong('只有书院课程组织才能查看此页面!')))
+
+    all_activity_list = (
+        Activity.objects
+        .activated()
+        .filter(organization_id=me)
+        .filter(category=Activity.ActivityCategory.COURSE)
+        .order_by("-start")
+    )
+
+    future_activity_list = (
+        all_activity_list.filter(
+            status__in=[
+                Activity.Status.REVIEWING,
+                Activity.Status.APPLYING,
+                Activity.Status.WAITING,
+                Activity.Status.PROGRESSING,
+            ]
+        )
+    )
+
+    finished_activity_list = (
+        all_activity_list
+        .filter(status=Activity.Status.END)
+        .order_by("-end")
+    ) # 本学期的已结束活动 
+
+    bar_display = utils.get_sidebar_and_navbar(request.user, navbar_name="我的活动")
+
+    return render(request, "org_show_course_activity.html", locals())
+  
+  
 @login_required(redirect_field_name="origin")
 @utils.check_user_access(redirect_url="/logout/")
 @log.except_captured(EXCEPT_REDIRECT, source='course_views[addCourse]', record_user=True)
@@ -258,4 +304,4 @@ def addCourse(request, cid=None):
         bar_display = utils.get_sidebar_and_navbar(request.user, "修改课程")
     
     return render(request, "register_course.html", locals())
-
+  
