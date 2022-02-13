@@ -91,6 +91,13 @@ urlpatterns = [
     path("sendMessage/", org_views.sendMessage, name="sendMessage"),
     # path("applyPosition/<str:oid>", views.apply_position, name="applyPosition"), 弃用多年
 ] + [
+    # 课程相关操作
+    path("selectCourse/", course_views.selectCourse, name="selectCourse"),
+    path("viewCourse/", course_views.viewCourse, name="viewCourse"),
+    path("addSingleCourseActivity/", course_views.addSingleCourseActivity, name="addSingleCourseActivity"),
+    path("editCourseActivity/<str:aid>", course_views.editCourseActivity, name="editCourseActivity"),
+    path("showCourseActivity/", course_views.showCourseActivity, name="showCourseActivity"),
+] + [
     # 数据导入
     path("loadstudata/", data_import.load_stu_data, name="load_stu_data"),
     path("loadfreshman/", data_import.load_freshman_info, name="load_freshman"),
@@ -106,6 +113,10 @@ urlpatterns = [
     #      data_import.load_notification_info,
     #      name="load_notification_info"),    #服务器弃用
     path("loadhelp/", data_import.load_help, name="load_help"),
+] + [
+    # 埋点
+    path('eventTrackingFunc/', views.eventTrackingFunc, name='eventTracking'),
+] + [
     path("loadcourecord/", data_import.load_CouRecord,  name="load_cou_record"),
 ] + [
     # 埋点
